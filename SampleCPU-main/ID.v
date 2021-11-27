@@ -70,15 +70,15 @@ module ID(
     
     wire [31:0]r1;
     wire [31:0]r2;
- assign{
-    ex_forwarding_we,
-    ex_forwarding_waddr,
-    ex_forwarding_wdata
+    assign{
+        ex_forwarding_we,
+        ex_forwarding_waddr,
+        ex_forwarding_wdata
     }=ex_to_id_forwarding;
-     assign{
-    mem_forwarding_we,
-    mem_forwarding_waddr,
-    mem_forwarding_wdata
+    assign{
+        mem_forwarding_we,
+        mem_forwarding_waddr,
+        mem_forwarding_wdata
     }=mem_to_id_forwarding;
 ////////////////////////////////////////////////////////
     wire [5:0] opcode;
@@ -132,16 +132,13 @@ module ID(
     assign base = inst[25:21];
     assign offset = inst[15:0];
     assign sel = inst[2:0];
-
-assign r1 = (ex_forwarding_we &(ex_forwarding_waddr==rs))?ex_forwarding_wdata:
-             ((mem_forwarding_we &(mem_forwarding_waddr==rs))?mem_forwarding_wdata:
-             ((wb_rf_we &(wb_rf_waddr==rs))?wb_rf_wdata : rdata1));
-assign r2 = (ex_forwarding_we &(ex_forwarding_waddr==rt))?ex_forwarding_wdata:
-              ((mem_forwarding_we &(mem_forwarding_waddr==rt))?mem_forwarding_wdata:
-              ((wb_rf_we &(wb_rf_waddr==rt))?wb_rf_wdata : rdata2));
-              
-    wire inst_ori, inst_lui, inst_addiu, inst_beq,inst_subu,inst_addu;
     
+        
+
+    assign r1 = (ex_forwarding_we &(ex_forwarding_waddr==rs))?ex_forwarding_wdata: ((mem_forwarding_we &(mem_forwarding_waddr==rs))?mem_forwarding_wdata:((wb_rf_we &(wb_rf_waddr==rs))?wb_rf_wdata : rdata1));
+    assign r2 = (ex_forwarding_we &(ex_forwarding_waddr==rt))?ex_forwarding_wdata: ((mem_forwarding_we &(mem_forwarding_waddr==rt))?mem_forwarding_wdata:((wb_rf_we &(wb_rf_waddr==rt))?wb_rf_wdata : rdata2));
+    
+    wire inst_ori, inst_lui, inst_addiu, inst_beq, inst_subu, inst_jal, inst_jr, inst_addu, inst_bne, inst_sll, inst_or;
     wire op_add, op_sub, op_slt, op_sltu;
     wire op_and, op_nor, op_or, op_xor;
     wire op_sll, op_srl, op_sra, op_lui;
@@ -171,24 +168,28 @@ assign r2 = (ex_forwarding_we &(ex_forwarding_waddr==rt))?ex_forwarding_wdata:
     assign inst_lui     = op_d[6'b00_1111];
     assign inst_addiu   = op_d[6'b00_1001];
     assign inst_beq     = op_d[6'b00_0100];
-    assign inst_subu    = (op_d[6'b00_0000]&&func_d[6'b10_0011]);
+    
+    assign inst_subu    = (op_d[6'b00_0000] && func_d[6'b10_0011]);
     assign inst_jal     = op_d[6'b00_0011];
-    assign inst_jr      = (op_d[6'b00_0000]&&func_d[6'b00_1000]);
-    assign inst_addu    =(op_d[6'b00_0000]&&func_d[6'b10_0001]);
-
+    assign inst_jr      = (op_d[6'b00_0000] && func_d[6'b00_1000]);
+    assign inst_addu    = (op_d[6'b00_0000] && func_d[6'b10_0001]);
+    assign inst_sll     = (op_d[6'b00_0000] && func_d[6'b00_0000]);
+    assign inst_bne     = op_d[6'b00_0101];
+    assign inst_or      = (op_d[6'b00_0000] && func_d[6'b10_0101]);
+    
 
     // rs to reg1 操作数一有三种可能
-    assign sel_alu_src1[0] = inst_ori | inst_addiu|inst_subu|inst_jr|inst_addu;
+    assign sel_alu_src1[0] = inst_ori | inst_addiu | inst_subu | inst_jr | inst_addu | inst_bne | inst_or;
 
     // pc to reg1
     assign sel_alu_src1[1] = inst_jal;
 
     // sa_zero_extend to reg1
-    assign sel_alu_src1[2]  = 1'b0;
+    assign sel_alu_src1[2] = inst_sll;
 
     
     // rt to reg2 操作数二有四种可能
-    assign sel_alu_src2[0] = inst_subu|inst_addu;
+    assign sel_alu_src2[0] = inst_subu | inst_addu | inst_sll | inst_bne | inst_or;
     
     // imm_sign_extend to reg2
     assign sel_alu_src2[1] = inst_lui | inst_addiu;
@@ -200,16 +201,15 @@ assign r2 = (ex_forwarding_we &(ex_forwarding_waddr==rt))?ex_forwarding_wdata:
     assign sel_alu_src2[3] = inst_ori;
 
 
-
-    assign op_add = inst_addiu|inst_jal|inst_addu;
+    assign op_add = inst_addiu | inst_jal | inst_addu;
     assign op_sub = inst_subu;
     assign op_slt = 1'b0;
     assign op_sltu = 1'b0;
     assign op_and = 1'b0;
     assign op_nor = 1'b0;
-    assign op_or = inst_ori;
+    assign op_or = inst_ori | inst_or;
     assign op_xor = 1'b0;
-    assign op_sll = 1'b0;
+    assign op_sll = inst_sll;
     assign op_srl = 1'b0;
     assign op_sra = 1'b0;
     assign op_lui = inst_lui;
@@ -229,25 +229,21 @@ assign r2 = (ex_forwarding_we &(ex_forwarding_waddr==rt))?ex_forwarding_wdata:
 
 
     // regfile sotre enable，写入信号，写寄存器才触发
-    assign rf_we = inst_ori | inst_lui | inst_addiu|inst_subu|inst_jal|inst_addu;
+    assign rf_we = inst_ori | inst_lui | inst_addiu | inst_subu | inst_jal | inst_addu | inst_sll | inst_or;
 
 
 
     // store in [rd] 根据字段进行地址的写入，看写入的是rt还是rd
-    assign sel_rf_dst[0] = inst_subu|inst_addu;
+    assign sel_rf_dst[0] = inst_subu | inst_addu | inst_sll  | inst_or;
     // store in [rt] 
     assign sel_rf_dst[1] = inst_ori | inst_lui | inst_addiu;
     // store in [31]，31号寄存器固定用法，某些跳转指令会将地址传入这里
     assign sel_rf_dst[2] = inst_jal;
-    
-      
-
 
     // sel for regfile address
     assign rf_waddr = {5{sel_rf_dst[0]}} & rd 
                     | {5{sel_rf_dst[1]}} & rt
                     | {5{sel_rf_dst[2]}} & 32'd31;
-                   
 
     // 0 from alu_res ; 1 from ld_res
     assign sel_rf_res = 1'b0; 
@@ -280,13 +276,16 @@ assign r2 = (ex_forwarding_we &(ex_forwarding_waddr==rt))?ex_forwarding_wdata:
     wire [31:0] pc_plus_8;
     assign pc_plus_4 = id_pc + 32'h4;
     assign pc_plus_8 = id_pc + 32'h8;
-    assign rs_eq_rt = (rdata1 == rdata2);//beq判断，两个寄存器内容是否相同
 
-    assign br_e = (inst_beq & rs_eq_rt)||inst_jal||inst_jr;
-    //assign br_addr = inst_beq ? (pc_plus_4 + {{14{inst[15]}},inst[15:0],2'b0}) : 32'b0;
-    assign br_addr = inst_beq ? (pc_plus_4 + {{14{inst[15]}},inst[15:0],2'b0}) : 
-                      inst_jal?({pc_plus_4[31:28],inst[25:0],2'b0}):
-                      inst_jr?(r1):32'b0;
+    assign rs_eq_rt = (r1 == r2);//beq判断，两个寄存器内容是否相同
+    assign rs_neq_rt = (r1 != r2);
+
+    assign br_e = (inst_beq & rs_eq_rt) | (inst_bne & rs_neq_rt) | inst_jal | inst_jr;
+    assign br_addr = inst_beq ? (pc_plus_4 + {{14{inst[15]}}, inst[15:0],2'b00}) :
+                     inst_bne ? (pc_plus_4 + {{14{inst[15]}}, {inst[15:0],2'b00}}) :
+                     inst_jal ? ({pc_plus_4[31:28], inst[25:0],2'b00}) : 
+                     inst_jr ? r1 : 32'b0;
+
     assign br_bus = {
         br_e,
         br_addr
