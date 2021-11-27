@@ -7,7 +7,6 @@ module ID(
 
     output wire stallreq,
 
-
     input wire [`IF_TO_ID_WD-1:0] if_to_id_bus,
 
     input wire [31:0] inst_sram_rdata,
